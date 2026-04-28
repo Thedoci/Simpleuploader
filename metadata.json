@@ -1,0 +1,6 @@
+{
+  "name": "LLNK - Secure File Uploader",
+  "description": "A high-capacity file uploader with resumable uploads, expiry timers, password protection, and an admin panel.",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}
