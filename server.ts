@@ -26,7 +26,7 @@ const PORT = 3000;
 const UPLOADS_DIR = path.join(__dirname, "uploads");
 const CHUNKS_DIR = path.join(__dirname, "chunks");
 const DB_FILE = path.join(__dirname, "db.json");
-const JWT_SECRET = process.env.JWT_SECRET || "llnk-super-secret-key";
+const JWT_SECRET = process.env.JWT_SECRET || "lnnk-super-secret-key";
 
 // Ensure directories exist
 fs.ensureDirSync(UPLOADS_DIR);

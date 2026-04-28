@@ -176,7 +176,7 @@ export default function App() {
                 <div className="w-8 h-8 rounded bg-sky-500/20 flex items-center justify-center group-hover:bg-sky-500/30 transition-colors">
                   <Upload className="w-5 h-5" />
                 </div>
-                <span className="font-bold tracking-tight text-xl font-mono">LLNK.IR</span>
+                <span className="font-bold tracking-tight text-xl font-mono">LNNK.IR</span>
               </div>
               
               <div className="space-y-1">
@@ -246,7 +246,7 @@ export default function App() {
                   <div className="w-5 h-0.5 bg-current mb-1"></div>
                   <div className="w-5 h-0.5 bg-current"></div>
                </button>
-               <span className="font-bold tracking-tight text-xl font-mono text-sky-400">LLNK.IR</span>
+               <span className="font-bold tracking-tight text-xl font-mono text-sky-400">LNNK.IR</span>
              </div>
              <button onClick={() => setView('admin')} className="text-slate-400 p-2"><Settings className="w-5 h-5"/></button>
           </header>
@@ -274,9 +274,9 @@ function Navbar({ user, setView, setUser }: any) {
           onClick={() => setView('login')}
         >
           <div className="w-8 h-8 bg-sky-600 rounded flex items-center justify-center font-bold text-white group-hover:bg-sky-500 transition-colors">
-            LL
+            LN
           </div>
-          <span className="font-mono tracking-tighter text-lg font-bold">LLNK.IR</span>
+          <span className="font-mono tracking-tighter text-lg font-bold">LNNK.IR</span>
         </div>
       </div>
     </nav>
