@@ -56,8 +56,16 @@ app.use(express.json());
 
 // Auth Middleware
 const authenticate = (req: any, res: any, next: any) => {
-  const token = req.headers.authorization?.split(" ")[1];
-  if (!token) return res.status(401).json({ error: "Unauthorized" });
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+
+  const token = authHeader.split(" ")[1];
+  if (!token || token === "null") {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
     req.user = decoded;
@@ -217,47 +225,82 @@ app.post("/api/download/:id", async (req, res) => {
 // --- CHUNKED UPLOAD ---
 const upload = multer({ dest: "chunks/" });
 
-app.post("/api/upload/chunk", authenticate, upload.single("chunk"), async (req: any, res) => {
-  const { fileName, chunkIndex, totalChunks, uploadId, fileSize } = req.body;
-  const chunkPath = req.file.path;
-  const chunkDir = path.join(CHUNKS_DIR, uploadId);
-  
-  await fs.ensureDir(chunkDir);
-  const finalChunkPath = path.join(chunkDir, `chunk-${chunkIndex}`);
-  await fs.move(chunkPath, finalChunkPath);
-
-  const chunks = await fs.readdir(chunkDir);
-  if (chunks.length === parseInt(totalChunks)) {
-    const finalPath = path.join(UPLOADS_DIR, `${uploadId}-${fileName}`);
-    const writeStream = fs.createWriteStream(finalPath);
-
-    for (let i = 0; i < totalChunks; i++) {
-        const currentChunkPath = path.join(chunkDir, `chunk-${i}`);
-        const buffer = await fs.readFile(currentChunkPath);
-        writeStream.write(buffer);
-        await fs.remove(currentChunkPath);
+app.post("/api/upload/chunk", upload.single("chunk"), async (req: any, res) => {
+  try {
+    const { fileName, chunkIndex, totalChunks, uploadId, fileSize } = req.body;
+    
+    if (!req.file) {
+      console.error("Upload Error: No chunk file received in request");
+      return res.status(400).json({ error: "No chunk file received" });
     }
-    writeStream.end();
 
-    await fs.remove(chunkDir);
+    // Handle optional authentication for owner tagging
+    let ownerId = 'guest';
+    const authHeader = req.headers.authorization;
+    if (authHeader && authHeader.startsWith("Bearer ")) {
+      const token = authHeader.split(" ")[1];
+      if (token && token !== "null") {
+        try {
+          const decoded: any = jwt.verify(token, JWT_SECRET);
+          ownerId = decoded.id;
+        } catch (err) {}
+      }
+    }
 
-    const fileMeta = {
-      id: nanoid(),
-      shortId: nanoid(8),
-      ownerId: req.user.id,
-      name: fileName,
-      size: parseInt(fileSize),
-      path: finalPath,
-      uploadedAt: Date.now(),
-      expiresAt: Date.now() + 24 * 60 * 60 * 1000,
-      password: null,
-      isEncrypted: req.body.isEncrypted === 'true',
-    };
-    db.files.push(fileMeta);
-    saveDb();
-    res.json({ success: true, file: fileMeta });
-  } else {
-    res.json({ success: true, progress: Math.round((chunks.length / totalChunks) * 100) });
+    const chunkPath = req.file.path;
+    const chunkDir = path.join(CHUNKS_DIR, uploadId);
+    
+    await fs.ensureDir(chunkDir);
+    const finalChunkPath = path.join(chunkDir, `chunk-${chunkIndex}`);
+    await fs.move(chunkPath, finalChunkPath, { overwrite: true });
+
+    const chunks = await fs.readdir(chunkDir);
+    const totalChunksInt = parseInt(totalChunks);
+
+    if (chunks.length === totalChunksInt) {
+      const finalPath = path.join(UPLOADS_DIR, `${uploadId}-${fileName}`);
+      
+      // Clear file if it already exists (unlikely given uploadId)
+      if (await fs.pathExists(finalPath)) {
+        await fs.remove(finalPath);
+      }
+
+      // Assemble chunks sequentially
+      for (let i = 0; i < totalChunksInt; i++) {
+        const currentChunkPath = path.join(chunkDir, `chunk-${i}`);
+        if (!await fs.pathExists(currentChunkPath)) {
+          console.error(`Upload Error: Missing chunk ${i} during assembly`);
+          throw new Error(`Missing chunk ${i}`);
+        }
+        const buffer = await fs.readFile(currentChunkPath);
+        await fs.appendFile(finalPath, buffer);
+        await fs.remove(currentChunkPath);
+      }
+
+      await fs.remove(chunkDir);
+
+      const fileMeta = {
+        id: nanoid(),
+        shortId: nanoid(8),
+        ownerId: ownerId,
+        name: fileName,
+        size: parseInt(fileSize),
+        path: finalPath,
+        uploadedAt: Date.now(),
+        expiresAt: Date.now() + 24 * 60 * 60 * 1000,
+        password: null,
+        isEncrypted: req.body.isEncrypted === 'true',
+      };
+      db.files.push(fileMeta);
+      saveDb();
+      console.log(`Upload Complete: ${fileName} (${fileSize} bytes)`);
+      res.json({ success: true, file: fileMeta });
+    } else {
+      res.json({ success: true, progress: Math.round((chunks.length / totalChunksInt) * 100) });
+    }
+  } catch (err: any) {
+    console.error("Chunk Upload API Error:", err.message);
+    res.status(500).json({ error: err.message || "Failed to process chunk" });
   }
 });
 

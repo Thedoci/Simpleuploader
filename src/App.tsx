@@ -10,17 +10,29 @@ import { User, FileMetadata, AppSettings } from './types';
 // --- API Service ---
 const API = {
   token: localStorage.getItem('token'),
-  async req(path: string, options: any = {}) {
-    const res = await fetch(path, {
+  async request(endpoint: string, options: any = {}) {
+    const headers: Record<string, string> = { ...options.headers };
+    if (this.token && this.token !== 'null') {
+      headers['Authorization'] = `Bearer ${this.token}`;
+    }
+
+    const res = await fetch(endpoint, {
       ...options,
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${this.token}`,
-        ...options.headers
-      }
+      headers
     });
+
+    if (res.status === 401) {
+      if (this.token && this.token !== 'null') {
+        this.token = null;
+        localStorage.removeItem('token');
+        localStorage.removeItem('user');
+        window.location.href = '/'; 
+      }
+      throw new Error('Session expired or unauthorized');
+    }
+
     if (!res.ok) {
-      const err = await res.json();
+      const err = await res.json().catch(() => ({ error: 'API Error' }));
       throw new Error(err.error || 'API Error');
     }
     return res.json();
@@ -145,7 +157,7 @@ export default function App() {
 
   const fetchFiles = useCallback(async () => {
     try {
-      const data = await API.req('/api/files');
+      const data = await API.request('/api/files');
       setFiles(data);
     } catch (err) {
       console.error(err);
@@ -291,7 +303,7 @@ function LoginView({ onSuccess }: { onSuccess: (u: User) => void }) {
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const res = await API.req('/api/auth/login', {
+      const res = await API.request('/api/auth/login', {
         method: 'POST',
         body: JSON.stringify({ username, password })
       });
@@ -394,13 +406,13 @@ function DashboardView({ files, refresh, user }: { files: FileMetadata[], refres
         }
 
         const formData = new FormData();
-        formData.append('chunk', finalChunk);
         formData.append('fileName', file.name);
         formData.append('chunkIndex', i.toString());
         formData.append('totalChunks', totalChunks.toString());
         formData.append('uploadId', uploadId);
         formData.append('fileSize', file.size.toString());
         formData.append('isEncrypted', encryptionEnabled.toString());
+        formData.append('chunk', finalChunk);
 
         const res = await fetch('/api/upload/chunk', {
           method: 'POST',
@@ -410,7 +422,10 @@ function DashboardView({ files, refresh, user }: { files: FileMetadata[], refres
           body: formData
         });
 
-        if (!res.ok) throw new Error('Chunk upload failed');
+        if (!res.ok) {
+          const errorData = await res.json().catch(() => ({ error: 'Unknown server error' }));
+          throw new Error(`Chunk upload failed (${res.status}): ${errorData.error || 'No details'}`);
+        }
         const data = await res.json();
         
         if (data.file && encryptionEnabled && keyStr) {
@@ -660,7 +675,7 @@ function FileCard({ file, refresh, showAdminControls }: FileCardProps) {
   const deleteFile = async () => {
     if (!confirm('DELETE THIS FILE PERMANENTLY?')) return;
     try {
-      await API.req(`/api/files/${file.id}`, { method: 'DELETE' });
+      await API.request(`/api/files/${file.id}`, { method: 'DELETE' });
       refresh();
     } catch (err) {
       alert('Delete failed');
@@ -795,7 +810,7 @@ function FileSettingsForm({ file, refresh }: { file: FileMetadata, refresh: () =
   const update = async () => {
     setLoading(true);
     try {
-      await API.req(`/api/files/${file.id}`, {
+      await API.request(`/api/files/${file.id}`, {
         method: 'PATCH',
         body: JSON.stringify({ name, password, customLink })
       });
@@ -864,8 +879,8 @@ function AdminView({ files, refresh }: any) {
 
   const fetchAdminData = async () => {
     const [u, s] = await Promise.all([
-      API.req('/api/admin/users'),
-      API.req('/api/admin/settings')
+      API.request('/api/admin/users'),
+      API.request('/api/admin/settings')
     ]);
     setUsers(u);
     setSettings(s);
@@ -876,7 +891,7 @@ function AdminView({ files, refresh }: any) {
   const createUser = async () => {
     if (!newUsername || !newPassword) return;
     try {
-      await API.req('/api/admin/users', {
+      await API.request('/api/admin/users', {
         method: 'POST',
         body: JSON.stringify({ username: newUsername, password: newPassword })
       });
@@ -891,7 +906,7 @@ function AdminView({ files, refresh }: any) {
 
   const updateSettings = async (val: number) => {
     try {
-      await API.req('/api/admin/settings', {
+      await API.request('/api/admin/settings', {
         method: 'POST',
         body: JSON.stringify({ maxUploadSize: val })
       });
@@ -1040,7 +1055,7 @@ function DownloadView({ shortId }: { shortId: string }) {
   useEffect(() => {
     const fetchMeta = async () => {
       try {
-        const data = await API.req(`/api/f/${shortId}`);
+        const data = await API.request(`/api/f/${shortId}`);
         setFile(data);
       } catch (err: any) {
         setError(err.message);
